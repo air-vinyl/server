@@ -94,7 +94,11 @@ async fn scan(devices: Arc<RwLock<Devices>>) -> Result<(), Box<dyn std::error::E
 
         child.kill()?;
 
-        Ok(Device { id: name.to_owned(), name: name.to_owned(), addr })
+        Ok(Device {
+            id: name.to_owned(),
+            name: name.to_owned(),
+            addr,
+        })
     }
 
     let mut cmd = Command::new("dns-sd");
@@ -176,7 +180,11 @@ async fn scan(devices: Arc<RwLock<Devices>>) -> Result<(), Box<dyn std::error::E
                 let port: u16 = parts.next().unwrap().parse()?;
 
                 let addr = SocketAddr::new(ip, port);
-                let device = Device { id: id.to_owned(), name: name.to_owned(), addr };
+                let device = Device {
+                    id: id.to_owned(),
+                    name: name.to_owned(),
+                    addr,
+                };
 
                 let mut devices = devices.write().unwrap();
                 if !devices.contains_key(id) {

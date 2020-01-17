@@ -7,7 +7,21 @@ fn open_recorder() -> io::Result<(Child, ChildStdout)> {
     #[cfg(target_os = "macos")]
     let mut cmd = Command::new("sox");
     #[cfg(target_os = "macos")]
-    cmd.arg("--no-show-progress").arg("--default-device").arg("--encoding").arg("signed-integer").arg("--channels").arg("2").arg("--bits").arg("16").arg("--endian").arg("little").arg("--rate").arg("44100").arg("--type").arg("raw").arg("-");
+    cmd.arg("--no-show-progress")
+        .arg("--default-device")
+        .arg("--encoding")
+        .arg("signed-integer")
+        .arg("--channels")
+        .arg("2")
+        .arg("--bits")
+        .arg("16")
+        .arg("--endian")
+        .arg("little")
+        .arg("--rate")
+        .arg("44100")
+        .arg("--type")
+        .arg("raw")
+        .arg("-");
 
     #[cfg(not(target_os = "macos"))]
     let mut cmd = Command::new("arecord");

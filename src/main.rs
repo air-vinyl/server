@@ -60,11 +60,14 @@ async fn api_put(input: PutInput, scanner: discovery::Scanner, streamer: streami
 
 #[tokio::main]
 async fn main() {
-    let args: Args = Docopt::new(USAGE)
-        .and_then(|d| d.deserialize())
-        .unwrap_or_else(|e| e.exit());
+    let args: Args = Docopt::new(USAGE).and_then(|d| d.deserialize()).unwrap_or_else(|e| e.exit());
 
-    stderrlog::new().verbosity(args.flag_d).timestamp(stderrlog::Timestamp::Microsecond).color(stderrlog::ColorChoice::Never).init().unwrap();
+    stderrlog::new()
+        .verbosity(args.flag_d)
+        .timestamp(stderrlog::Timestamp::Microsecond)
+        .color(stderrlog::ColorChoice::Never)
+        .init()
+        .unwrap();
 
     let scanner = discovery::Scanner::new();
     let scanner = warp::any().map(move || scanner.clone());

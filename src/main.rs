@@ -60,6 +60,9 @@ async fn api_put(input: PutInput, scanner: discovery::Scanner, streamer: streami
 
 #[tokio::main]
 async fn main() {
+    let ui_path = env::var("AIR_VINYL_UI").expect("Please set the env variable AIR_VINYL_UI with a path to the built UI");
+    let port = env::var("PORT").map(|p| p.parse::<u16>().expect("The env variable PORT did not contain a valid port number")).unwrap_or(3030);
+
     let args: Args = Docopt::new(USAGE).and_then(|d| d.deserialize()).unwrap_or_else(|e| e.exit());
 
     stderrlog::new()
@@ -83,8 +86,8 @@ async fn main() {
     let put = warp::put().and(json_body).and(api).and_then(api_put);
 
     // Serve UI
-    let ui = warp::fs::dir(env::var("AIR_VINYL_UI").unwrap());
+    let ui = warp::fs::dir(ui_path);
 
     // Spawn the server on the Tokio runtime
-    warp::serve(get.or(put).or(ui)).run(([0, 0, 0, 0], 3030)).await;
+    warp::serve(get.or(put).or(ui)).run(([0, 0, 0, 0], port)).await;
 }

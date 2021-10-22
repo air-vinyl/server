@@ -58,7 +58,7 @@ async fn api_put(input: PutInput, scanner: discovery::Scanner, streamer: streami
     Ok("test")
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let ui_path = env::var("AIR_VINYL_UI").expect("Please set the env variable AIR_VINYL_UI with a path to the built UI");
     let port = env::var("PORT").map(|p| p.parse::<u16>().expect("The env variable PORT did not contain a valid port number")).unwrap_or(3030);

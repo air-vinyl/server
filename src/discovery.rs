@@ -60,7 +60,7 @@ async fn scan(devices: Arc<RwLock<Devices>>) -> Result<(), Box<dyn std::error::E
         let info = reader.next_line().await?.unwrap();
         let ip = info[69..84].trim().parse::<IpAddr>()?;
 
-        child.kill()?;
+        child.kill().await?;
 
         Ok(ip)
     }
@@ -92,7 +92,7 @@ async fn scan(devices: Arc<RwLock<Devices>>) -> Result<(), Box<dyn std::error::E
         let ip = lookup_ip(host).await?;
         let addr = SocketAddr::new(ip, port);
 
-        child.kill()?;
+        child.kill().await?;
 
         Ok(Device {
             id: name.to_owned(),

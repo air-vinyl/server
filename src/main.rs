@@ -26,19 +26,19 @@ struct Args {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct GetResult {
     device: Option<String>,
-    volume: Option<u16>,
+    volume: Option<u8>,
     devices: Vec<discovery::Device>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct PutInput {
     device: Option<String>,
-    volume: Option<u16>,
+    volume: Option<u8>,
 }
 
 async fn api_get(scanner: discovery::Scanner, streamer: streaming::Streamer) -> Result<impl warp::Reply, warp::Rejection> {
-    let addr = streamer.addr();
-    let volume = streamer.volume();
+    let addr = streamer.addr().await;
+    let volume = streamer.volume().await;
 
     let source = scanner.read_devices();
     let device = source.iter().find(|(_, device)| Some(device.addr) == addr).map(|(id, _)| id.to_owned());
@@ -52,8 +52,7 @@ async fn api_put(input: PutInput, scanner: discovery::Scanner, streamer: streami
 
     let addr = input.device.and_then(|id| scanner.device(&id)).map(|device| device.addr);
 
-    // FIXME: Handle errors!
-    streamer.update(addr, input.volume).unwrap();
+    streamer.update(addr, input.volume).await;
 
     Ok("test")
 }
@@ -75,7 +74,7 @@ async fn main() {
     let scanner = discovery::Scanner::new();
     let scanner = warp::any().map(move || scanner.clone());
 
-    let streamer = streaming::Streamer::new(args.flag_d);
+    let streamer = streaming::Streamer::new();
     let streamer = warp::any().map(move || streamer.clone());
 
     let json_body = warp::body::content_length_limit(1024 * 16).and(warp::body::json());

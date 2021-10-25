@@ -1,7 +1,14 @@
+use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::process::{Child, ChildStdout, Command, Stdio};
-use std::sync::{Arc, RwLock};
+use std::process::Stdio;
+use std::sync::Arc;
+
+use log::warn;
+use tokio::io::AsyncReadExt;
+use tokio::process::{Child, ChildStdout, Command};
+use tokio::sync::{RwLock};
+use raop_play::{Codec, Frames, MAX_SAMPLES_PER_CHUNK, MetaDataItem, RaopClient, RaopParams, SampleRate, Volume};
 
 fn open_recorder() -> io::Result<(Child, ChildStdout)> {
     #[cfg(target_os = "macos")]
@@ -37,27 +44,9 @@ fn open_recorder() -> io::Result<(Child, ChildStdout)> {
     Ok((child, stdout))
 }
 
-fn open_player(stream: ChildStdout, addr: SocketAddr, volume: Option<u16>, debug_level: usize) -> io::Result<Child> {
-    let d = format!("{}", debug_level);
-    let port = format!("{}", addr.port());
-    let ip = format!("{}", addr.ip());
-    let mut cmd = Command::new("./raop_play");
-    cmd.arg("-d").arg(d).arg("-a");
-    if let Some(volume) = volume {
-        cmd.arg("-v").arg(format!("{}", volume));
-    }
-    cmd.arg("-p").arg(port).arg(ip).arg("-");
-    cmd.stdin(stream);
-    cmd.stderr(Stdio::inherit());
-    cmd.spawn()
-}
-
 struct Inner {
     addr: Option<SocketAddr>,
-    debug_level: usize,
-    recorder: Option<Child>,
-    player: Option<Child>,
-    volume: Option<u16>,
+    volume: Option<u8>,
 }
 
 #[derive(Clone)]
@@ -66,50 +55,86 @@ pub struct Streamer {
 }
 
 impl Streamer {
-    pub fn new(debug_level: usize) -> Streamer {
-        Streamer {
-            inner: Arc::new(RwLock::new(Inner {
-                addr: None,
-                debug_level,
-                recorder: None,
-                player: None,
-                volume: None,
-            })),
-        }
+    pub fn new() -> Streamer {
+        let inner = Arc::new(RwLock::new(Inner { addr: None, volume: None }));
+        tokio::spawn(Streamer::run(inner.clone()));
+        Streamer { inner }
     }
 
-    pub fn addr(&self) -> Option<SocketAddr> {
-        self.inner.read().unwrap().addr
+    pub async fn addr(&self) -> Option<SocketAddr> {
+        self.inner.read().await.addr
     }
 
-    pub fn volume(&self) -> Option<u16> {
-        self.inner.read().unwrap().volume
+    pub async fn volume(&self) -> Option<u8> {
+        self.inner.read().await.volume
     }
 
-    pub fn update(&self, addr: Option<SocketAddr>, volume: Option<u16>) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn update(&self, addr: Option<SocketAddr>, volume: Option<u8>) {
+        let mut inner = self.inner.write().await;
 
         inner.addr = addr;
         inner.volume = volume;
+    }
 
-        if let Some(mut recorder) = inner.recorder.take() {
-            // Stop reading audio data
-            recorder.kill()?;
+    async fn run(data: Arc<RwLock<Inner>>) {
+        let mut clients = HashMap::<SocketAddr, RaopClient>::new();
+        let (_, mut stream) = open_recorder().unwrap();
+        let mut buf = [0; MAX_SAMPLES_PER_CHUNK.as_usize(4)];
+        let mut volume = Option::<Volume>::None;
+
+        loop {
+            let (addr, desired_volume) = {
+                let guard = data.read().await;
+                (guard.addr, guard.volume.map(Volume::from_percent))
+            };
+
+            if let Some(desired_volume) = desired_volume {
+                if Some(desired_volume) != volume {
+                    for client in clients.values_mut() {
+                        client.set_volume(desired_volume).await.unwrap();
+                    }
+                }
+
+                volume = Some(desired_volume);
+            }
+
+            if let Some(addr) = addr {
+                if !clients.contains_key(&addr) {
+                    let mut params = RaopParams::new();
+
+                    params.set_codec(Codec::new(true, MAX_SAMPLES_PER_CHUNK, SampleRate::Hz44100, 16, 2));
+                    params.set_desired_latency(Frames::new(44100));
+
+                    let client = RaopClient::connect(params, addr).await.unwrap();
+
+                    if let Some(volume) = volume {
+                        client.set_volume(volume).await.unwrap();
+                    }
+
+                    let meta_data = MetaDataItem::listing_item(vec![
+                        MetaDataItem::item_kind(2),
+                    ]);
+
+                    if let Err(err) = client.set_meta_data(meta_data).await {
+                        warn!("Failed to set meta data: {}", err);
+                    }
+
+                    clients.insert(addr, client);
+                }
+            }
+
+            let n = stream.read(&mut buf).await.unwrap();
+
+            for client in clients.values_mut() {
+                client.accept_frames().await.unwrap();
+                client.send_chunk(&buf[0..n]).await.unwrap();
+            }
+
+            if addr.is_none() {
+                for (_, client) in clients.drain() {
+                    client.teardown().await.unwrap();
+                }
+            }
         }
-
-        if let Some(mut player) = inner.player.take() {
-            // The player will teardown the connection when audio stops, and then terminate
-            player.wait()?;
-        }
-
-        if let Some(addr) = addr {
-            let (recorder, stream) = open_recorder()?;
-            let player = open_player(stream, addr, volume, inner.debug_level)?;
-
-            inner.recorder = Some(recorder);
-            inner.player = Some(player);
-        }
-
-        Ok(())
     }
 }
